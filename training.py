@@ -15,6 +15,7 @@ from nltk.stem import WordNetLemmatizer
 import nltk
 from collections import Counter
 import re
+import pickle
 
 # Download NLTK resources
 nltk.download('wordnet')
@@ -66,9 +67,9 @@ embeddings_index = load_glove_embeddings(glove_path)
 
 # Example: beef is more important than pepper
 ingredient_weights = {
-    'beef': 3.0,
-    'chicken': 2.5,
-    'fish': 2.5,
+    'beef': 7.0,
+    'chicken': 7.0,
+    'fish': 7.0,
     'pasta': 2.0,
     'cake': 2.0,
     'pepper': 1.0,
@@ -84,7 +85,7 @@ ingredient_weights = {
     'butter': 1.1,
     'oil': 1.1,
 }
-default_weight = 1.0  # Weight for ingredients not in the dictionary
+default_weight = 0.9  # Weight for ingredients not in the dictionary
 
 # Function to compute the average GloVe embedding for a text
 def get_weighted_embedding(text):
@@ -107,7 +108,7 @@ df['embedding'] = df['ner_labeled'].apply(get_weighted_embedding)
 X = np.vstack(df['embedding'].values)
 
 # Extract dish type from title
-df['dish_type'] = df['title'].str.extract(r'(cake|pie|bread|cookie|casserole|roll|soup|salad|pasta|chicken|beef|fish|pudding|muffin|brownie|bar|sandwich|biscuit|pancake|waffle|pizza|tart|crisp|cobbler|loaf|dough|mayonnaise)', flags=re.IGNORECASE, expand=False).str.lower().fillna('other')
+df['dish_type'] = df['title'].str.extract(r'(cake|pie|bread|cookie|casserole|roll|soup|salad|pasta|chicken|beef|fish|pudding|muffin|brownie|bar|sandwich|biscuits|pancake|waffle|pizza|tart|crisp|cobbler|loaf|dough|mayonnaise)', flags=re.IGNORECASE, expand=False).str.lower().fillna('other')
 
 # Encode the dish types
 label_encoder = LabelEncoder()
@@ -131,6 +132,13 @@ print("Number of unique titles after filtering:", df['title'].nunique())
 
 # Save all recipe info and embeddings for fast inference
 df[['title', 'dish_type', 'ner_labeled', 'embedding']].to_pickle("recipe_embeddings.pkl")
+
+# After you have your vocabulary (e.g., all words in df['ner_labeled'])
+used_words = set(" ".join(df['ner_labeled']).split())
+small_embeddings = {w: v for w, v in embeddings_index.items() if w in used_words}
+
+with open("small_glove.pkl", "wb") as f:
+    pickle.dump(small_embeddings, f)
 
 # Step 3: Split the data into training and validation sets
 X_train, X_val, y_train, y_val = train_test_split(X, y_cat, test_size=0.2, random_state=42)

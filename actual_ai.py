@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 from nltk.stem import WordNetLemmatizer
+import pickle
+import re
 
 # Load model, label encoder, and precomputed recipe embeddings
 model = load_model("recipe_model.h5")
@@ -21,8 +23,9 @@ def load_glove_embeddings(glove_path):
             embeddings_index[word] = vector
     return embeddings_index
 
-glove_path = "glove.6B.300d.txt"
-embeddings_index = load_glove_embeddings(glove_path)
+# Load the small, precomputed embeddings
+with open("small_glove.pkl", "rb") as f:
+    embeddings_index = pickle.load(f)
 
 # Preprocessing config
 custom_stopwords = set(ENGLISH_STOP_WORDS).union({'all-purpose', 'sugar', 'salt', 'flour', 'water', 'milk', 'eggs', "powder", "baking", "soda"})
@@ -41,10 +44,25 @@ def get_embedding(text, embeddings_index):
     else:
         return np.zeros(next(iter(embeddings_index.values())).shape)
 
+def get_phrase_embedding(ingredient_list, embeddings_index):
+    embeddings = []
+    for phrase in ingredient_list:
+        # Clean up phrase: lowercase, remove punctuation
+        phrase_clean = re.sub(r'[^\w\s]', '', phrase.lower())
+        words = phrase_clean.split()
+        # Average GloVe for all words in phrase
+        phrase_vecs = [embeddings_index[w] for w in words if w in embeddings_index]
+        if phrase_vecs:
+            phrase_embedding = np.mean(phrase_vecs, axis=0)
+            embeddings.append(phrase_embedding)
+    if embeddings:
+        return np.mean(embeddings, axis=0)
+    else:
+        return np.zeros(next(iter(embeddings_index.values())).shape)
+
 # User input
-new_ingredients = ["beef", "onion", "garlic", "tomato", "eggs", "flour", "chicken"]
-new_input_proc = preprocess_ingredients(' '.join(new_ingredients))
-new_vec = get_embedding(new_input_proc, embeddings_index).reshape(1, -1)
+new_ingredients = ["chicken breast", "olive oil", "garlic", "lemon juice", "salt", "pepper"]
+new_vec = get_phrase_embedding(new_ingredients, embeddings_index).reshape(1, -1)
 
 # Predict dish type
 predictions = model.predict(new_vec)
