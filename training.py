@@ -61,7 +61,6 @@ def load_glove_embeddings(glove_path):
             embeddings_index[word] = vector
     return embeddings_index
 
-# Replace with the actual path to your GloVe file
 glove_path = "glove.6B.300d.txt"
 embeddings_index = load_glove_embeddings(glove_path)
 
