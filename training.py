@@ -30,8 +30,11 @@ df = df.sample(frac=1, random_state=42).reset_index(drop=True)
 # Step 2: Extract the NER column and preprocess
 df['ner_labeled'] = df['NER'].apply(lambda x: ' '.join(ast.literal_eval(x)))  # Convert NER list to a single string
 
+# Remove recipes with only 1 or 2 ingredients
+df = df[df['ner_labeled'].apply(lambda x: len(x.split()) > 2)].reset_index(drop=True)
+
 # Custom stopword list
-custom_stopwords = set(ENGLISH_STOP_WORDS).union({'all-purpose', 'salt', 'flour', 'water', "powder", "baking", "soda"})
+custom_stopwords = set(ENGLISH_STOP_WORDS).union({'all-purpose', 'salt', 'water', "powder", "baking", "soda","brown","beat","dark","yellow","white","cold","oleo","green","red","juice","fresh","hot","large","small","medium","whole","ground","dried","canned","frozen","raw","cooked"})
 
 # Remove custom stopwords
 df['ner_labeled'] = df['ner_labeled'].apply(
@@ -44,7 +47,6 @@ df['ner_labeled'] = df['ner_labeled'].apply(
     lambda x: ' '.join([lemmatizer.lemmatize(word) for word in x.split()])
 )
 
-print(df['ner_labeled'].head(10))
 print("Unique entries in ner_labeled:", df['ner_labeled'].nunique())
 
 # Flatten the list of words and count frequencies
@@ -67,13 +69,13 @@ embeddings_index = load_glove_embeddings(glove_path)
 
 # Example: beef is more important than pepper
 ingredient_weights = {
-    'beef': 7.0,
-    'chicken': 7.0,
+    'beef': 13.0,
+    'chicken': 14.0,
     'fish': 7.0,
     'pasta': 2.0,
     'cake': 2.0,
     'pepper': 1.0,
-    'onion': 1.5,
+    'onion': 0.7,
     'garlic': 1.5,
     'tomato': 1.5,
     'sugar': 0.8,
@@ -84,6 +86,7 @@ ingredient_weights = {
     'yeast': 1.0,
     'butter': 1.1,
     'oil': 1.1,
+    'salt': 0.5,
 }
 default_weight = 0.9  # Weight for ingredients not in the dictionary
 
@@ -107,8 +110,30 @@ def get_weighted_embedding(text):
 df['embedding'] = df['ner_labeled'].apply(get_weighted_embedding)
 X = np.vstack(df['embedding'].values)
 
-# Extract dish type from title
-df['dish_type'] = df['title'].str.extract(r'(cake|pie|bread|cookie|casserole|roll|soup|salad|pasta|chicken|beef|fish|pudding|muffin|brownie|bar|sandwich|biscuits|pancake|waffle|pizza|tart|crisp|cobbler|loaf|dough|mayonnaise)', flags=re.IGNORECASE, expand=False).str.lower().fillna('other')
+# Define keywords for dish types (expand as needed)
+dish_keywords = [
+    'cake','pie','bread','cookie','casserole','roll','soup','salad','pasta','chicken','beef','fish',
+    'pudding','muffin','brownie','bar','sandwich','biscuits','pancake','waffle','pizza','tart',
+    'crisp','cobbler','loaf','dough','mayonnaise'
+]
+
+def categorize_by_title_or_ingredient(row):
+    # Try to extract from title first
+    for kw in dish_keywords:
+        if re.search(rf'\b{kw}\b', row['title'], re.IGNORECASE):
+            return kw
+    # If not found in title, check ingredients
+    for kw in dish_keywords:
+        if re.search(rf'\b{kw}\b', row['ner_labeled'], re.IGNORECASE):
+            return kw
+    return 'other'
+
+df['dish_type'] = df.apply(categorize_by_title_or_ingredient, axis=1)
+
+# Print category counts
+print("Dish type counts:")
+print(df['dish_type'].value_counts())
+print("\n")
 
 # Encode the dish types
 label_encoder = LabelEncoder()
@@ -150,7 +175,6 @@ model = Sequential([
     Dropout(0.3),
     Dense(128, activation='relu', kernel_regularizer=l2(0.001)),
     Dropout(0.2),
-    Dense(64, activation='relu', kernel_regularizer=l2(0.001)),
     Dense(y_cat.shape[1], activation='softmax')
 ])
 
@@ -158,8 +182,17 @@ model = Sequential([
 from tensorflow.keras.optimizers import Adam
 model.compile(optimizer=Adam(learning_rate=1e-4), loss='categorical_crossentropy', metrics=['accuracy'])
 
+early_stop = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+
 # Train the model
-history = model.fit(X_train, y_train, epochs=20, batch_size=32, validation_data=(X_val, y_val), verbose=1)
+history = model.fit(
+    X_train, y_train,
+    epochs=100,  # You can increase epochs with early stopping
+    batch_size=16,
+    validation_data=(X_val, y_val),
+    verbose=1,
+    callbacks=[early_stop]
+)
 
 # Save the model and preprocessing objects
 model.save("recipe_model.h5")

@@ -27,12 +27,8 @@ def load_glove_embeddings(glove_path):
 with open("small_glove.pkl", "rb") as f:
     embeddings_index = pickle.load(f)
 
-# Preprocessing config
-custom_stopwords = set(ENGLISH_STOP_WORDS).union({'all-purpose', 'sugar', 'salt', 'flour', 'water', 'milk', 'eggs', "powder", "baking", "soda"})
-lemmatizer = WordNetLemmatizer()
-
 def preprocess_ingredients(ingredients):
-    words = [w for w in ingredients.lower().split() if w not in custom_stopwords]
+    words = [w for w in ingredients.lower().split()]
     words = [lemmatizer.lemmatize(w) for w in words]
     return ' '.join(words)
 
@@ -60,9 +56,52 @@ def get_phrase_embedding(ingredient_list, embeddings_index):
     else:
         return np.zeros(next(iter(embeddings_index.values())).shape)
 
+# Ingredient weights (same as in training)
+ingredient_weights = {
+    'beef': 13.0,
+    'chicken': 14.0,
+    'fish': 7.0,
+    'pasta': 2.0,
+    'cake': 2.0,
+    'pepper': 1.0,
+    'onion': 0.7,
+    'garlic': 1.5,
+    'tomato': 1.5,
+    'sugar': 0.8,
+    'flour': 1.0,
+    'water': 0.5,
+    'milk': 1.0,
+    'eggs': 1.0,
+    'yeast': 1.0,
+    'butter': 1.1,
+    'oil': 1.1,
+    'salt': 0.5,
+}
+default_weight = 0.9
+
+def get_weighted_phrase_embedding(ingredient_list, embeddings_index):
+    embeddings = []
+    weights = []
+    for phrase in ingredient_list:
+        # Clean up phrase: lowercase, remove punctuation
+        phrase_clean = re.sub(r'[^\w\s]', '', phrase.lower())
+        words = phrase_clean.split()
+        main_word = words[-1] if words else ""
+        # Average GloVe for all words in phrase
+        phrase_vecs = [embeddings_index[w] for w in words if w in embeddings_index]
+        if phrase_vecs:
+            phrase_embedding = np.mean(phrase_vecs, axis=0)
+            weight = ingredient_weights.get(main_word, default_weight)
+            embeddings.append(phrase_embedding * weight)
+            weights.append(weight)
+    if embeddings:
+        return np.sum(embeddings, axis=0) / np.sum(weights)
+    else:
+        return np.zeros(next(iter(embeddings_index.values())).shape)
+
 # User input
-new_ingredients = ["chicken breast", "olive oil", "garlic", "lemon juice", "salt", "pepper"]
-new_vec = get_phrase_embedding(new_ingredients, embeddings_index).reshape(1, -1)
+new_ingredients = [ "beef", "chicken", "fish", "pasta", "cake", "pepper", "onion", "garlic", "tomato", "sugar", "eggs", "yeast", "butter" ]
+new_vec = get_weighted_phrase_embedding(new_ingredients, embeddings_index).reshape(1, -1)
 
 # Predict dish type
 predictions = model.predict(new_vec)
