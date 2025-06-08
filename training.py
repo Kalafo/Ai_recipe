@@ -30,15 +30,26 @@ df = df.sample(frac=1, random_state=42).reset_index(drop=True)
 # Step 2: Extract the NER column and preprocess
 df['ner_labeled'] = df['NER'].apply(lambda x: ' '.join(ast.literal_eval(x)))  # Convert NER list to a single string
 
+# Split ingredients like "chicken/turkey" into separate words
+df['ner_labeled'] = df['ner_labeled'].str.replace(r'/', ' ', regex=True)
+
+# Remove unwanted characters from ingredients
+df['ner_labeled'] = df['ner_labeled'].str.replace(r'[()\[\]\"*,\+\-]', '', regex=True)
+
 # Remove recipes with only 1 or 2 ingredients
 df = df[df['ner_labeled'].apply(lambda x: len(x.split()) > 2)].reset_index(drop=True)
 
 # Custom stopword list
-custom_stopwords = set(ENGLISH_STOP_WORDS).union({'all-purpose', 'salt', 'water', "powder", "baking", "soda","brown","beat","dark","yellow","white","cold","oleo","green","red","juice","fresh","hot","large","small","medium","whole","ground","dried","canned","frozen","raw","cooked"})
+custom_stopwords = set(ENGLISH_STOP_WORDS).union({'l','all-purpose', 'salt', 'water', "powder", "baking", "soda","brown","beat","dark","yellow","white","cold","oleo","green","red","juice","fresh","hot","large","small","medium","whole","ground","dried","canned","frozen","raw","cooked"})
 
 # Remove custom stopwords
 df['ner_labeled'] = df['ner_labeled'].apply(
     lambda x: ' '.join([word for word in x.split() if word not in custom_stopwords])
+)
+
+# Remove words with less than 3 characters
+df['ner_labeled'] = df['ner_labeled'].apply(
+    lambda x: ' '.join([word for word in x.split() if len(word) >= 3])
 )
 
 # Apply lemmatization
@@ -165,6 +176,10 @@ small_embeddings = {w: v for w, v in embeddings_index.items() if w in used_words
 with open("small_glove.pkl", "wb") as f:
     pickle.dump(small_embeddings, f)
 
+# Save the list of unique ingredients used in the model to a CSV
+unique_ingredients = sorted(used_words)
+pd.DataFrame({'ingredient': unique_ingredients}).to_csv("model_ingredients.csv", index=False)
+
 # Step 3: Split the data into training and validation sets
 X_train, X_val, y_train, y_val = train_test_split(X, y_cat, test_size=0.2, random_state=42)
 
@@ -187,15 +202,15 @@ early_stop = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=
 # Train the model
 history = model.fit(
     X_train, y_train,
-    epochs=100,  # You can increase epochs with early stopping
-    batch_size=16,
+    epochs=200,  # You can increase epochs with early stopping
+    batch_size=64,
     validation_data=(X_val, y_val),
     verbose=1,
     callbacks=[early_stop]
 )
 
 # Save the model and preprocessing objects
-model.save("recipe_model.h5")
+model.save("recipe_model.keras", save_format="keras")
 joblib.dump(label_encoder, "label_encoder.pkl")
 
 

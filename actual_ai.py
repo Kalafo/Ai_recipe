@@ -100,7 +100,7 @@ def get_weighted_phrase_embedding(ingredient_list, embeddings_index):
         return np.zeros(next(iter(embeddings_index.values())).shape)
 
 # User input
-new_ingredients = [ "beef", "chicken", "fish", "pasta", "cake", "pepper", "onion", "garlic", "tomato", "sugar", "eggs", "yeast", "butter" ]
+new_ingredients = [ "marshmallow" ]
 new_vec = get_weighted_phrase_embedding(new_ingredients, embeddings_index).reshape(1, -1)
 
 # Predict dish type
@@ -111,22 +111,46 @@ top_types = label_encoder.inverse_transform(top_indices)
 # Load the original test dataset for NER info
 test_df = pd.read_csv("test_dataset.csv", usecols=['title', 'NER'])
 
-print("Rekomendowane typy potraw:")
-for i, dish_type in enumerate(top_types):
-    print(f"{i + 1}. {dish_type}")
-    recipes = recipes_df[recipes_df['dish_type'] == dish_type]
-    if not recipes.empty:
-        recipe_embs = np.vstack(recipes['embedding'].values)
-        sim = np.dot(recipe_embs, new_vec[0])
-        best_idx = np.argmax(sim)
-        best_recipe = recipes.iloc[best_idx]
-        print(f"   Najlepszy przepis: {best_recipe['title']}")
-        # Find the original NER ingredients for this recipe title
-        ner_row = test_df[test_df['title'] == best_recipe['title']]
-        if not ner_row.empty:
-            print(f"   Składniki: {ner_row.iloc[0]['NER']}")
-        else:
-            print("   Składniki: (brak danych)")
-        print()
-    else:
-        print("   Brak przepisu dla tego typu potrawy.\n")
+# print("Rekomendowane typy potraw:")
+# for i, dish_type in enumerate(top_types):
+#     print(f"{i + 1}. {dish_type}")
+#     recipes = recipes_df[recipes_df['dish_type'] == dish_type]
+#     if not recipes.empty:
+#         recipe_embs = np.vstack(recipes['embedding'].values)
+#         sim = np.dot(recipe_embs, new_vec[0])
+#         best_idx = np.argmax(sim)
+#         best_recipe = recipes.iloc[best_idx]
+#         print(f"   Najlepszy przepis: {best_recipe['title']}")
+#         # Find the original NER ingredients for this recipe title
+#         ner_row = test_df[test_df['title'] == best_recipe['title']]
+#         if not ner_row.empty:
+#             print(f"   Składniki: {ner_row.iloc[0]['NER']}")
+#         else:
+#             print("   Składniki: (brak danych)")
+#         print()
+#     else:
+#         print("   Brak przepisu dla tego typu potrawy.\n")
+
+def recommend_by_ingredient_overlap(user_ingredients, recipes_df, top_n=3):
+    user_set = set([i.strip().lower() for i in user_ingredients])
+    results = []
+    for idx, row in recipes_df.iterrows():
+        recipe_ingredients = set(row['ner_labeled'].split())
+        overlap = user_set & recipe_ingredients
+        results.append((len(overlap), row['title'], row['dish_type'], row['ner_labeled']))
+    # Sort by number of overlapping ingredients, descending
+    results.sort(reverse=True, key=lambda x: x[0])
+    return results[:top_n]
+
+# User input
+user_ingredients = ["tomato","onion","butter"]  # Example
+
+top_matches = recommend_by_ingredient_overlap(user_ingredients, recipes_df, top_n=3)
+print("Top 3 recipes by ingredient overlap:")
+for match_count, title, dish_type, ingredients in top_matches:
+    recipe_ingredients = set(ingredients.split())
+    user_set = set([i.strip().lower() for i in user_ingredients])
+    matched = recipe_ingredients & user_set
+    not_matched = recipe_ingredients - user_set
+    print(f"{title} ({dish_type}) - {match_count} matches: {', '.join(matched)}")
+    print(f"notmatched but in recipe: {', '.join(not_matched)}\n")
